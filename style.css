@@ -19,6 +19,7 @@ window.addEventListener('load', () => {
             showView('login');
             setupInitialData();
             loadCompanyLogoForLogin();
+            initializeEventListeners();
         } else {
             (async () => {
                 try {
@@ -160,22 +161,23 @@ async function updateSignatureButtonState(userId, monthYear) {
 }
 
 function openSignatureModal() {
-    document.getElementById('signature-modal').style.display = 'flex';
-    const canvas = document.getElementById('signature-modal-canvas');
+    document.getElementById('signature-container').classList.remove('hidden');
+    const canvas = document.getElementById('signature-canvas');
     signaturePad = new SignaturePad(canvas, { backgroundColor: 'rgb(255, 255, 255)' });
 }
 
-function closeSignatureModal() {
-    document.getElementById('signature-modal').style.display = 'none';
+function hideSignaturePad() {
+    document.getElementById('signature-container').classList.add('hidden');
+    if(signaturePad) signaturePad.clear();
     signaturePad = null;
 }
 
-function clearModalSignature() {
+function clearSignature() {
     if(signaturePad) signaturePad.clear();
 }
 
 async function saveSignature() {
-    const signatureError = document.getElementById('signature-modal-error');
+    const signatureError = document.getElementById('signature-error');
     signatureError.textContent = '';
     if (signaturePad.isEmpty()) { signatureError.textContent = "Por favor, proporciona una firma."; return; }
     const signatureDataURL = signaturePad.toDataURL();
@@ -184,7 +186,7 @@ async function saveSignature() {
     try {
         const signatureDocRef = doc(db, `artifacts/${appId}/public/data/signatures`, `${currentUser.id}_${monthYear}`);
         await setDoc(signatureDocRef, { userId: currentUser.id, monthYear: monthYear, signatureData: signatureDataURL, signedAt: new Date() });
-        closeSignatureModal();
+        hideSignaturePad();
         updateSignatureButtonState(currentUser.id, monthYear);
     } catch (error) { console.error("Error al guardar la firma:", error); signatureError.textContent = "Error al guardar la firma."; }
 }
@@ -195,11 +197,7 @@ async function loadManagerView() {
     await populateEmployeeDropdown();
     await renderEmployeeList();
     await loadCompanySettings();
-    document.getElementById('employee-select').addEventListener('change', updateManagerShiftView);
-    monthSelect.addEventListener('change', updateManagerShiftView);
-    document.getElementById('logo-upload').addEventListener('change', handleLogoUpload);
     updateManagerShiftView();
-    switchTab('reports');
 }
 
 function switchTab(tabName) {
@@ -305,7 +303,7 @@ async function renderEmployeeList() {
     });
 }
 
-async function showEmployeeForm(userId = null) {
+function showEmployeeForm(userId = null) {
     document.getElementById('employee-form-container').classList.remove('hidden');
     document.getElementById('add-employee-btn').classList.add('hidden');
     const form = document.getElementById('employee-form');
@@ -320,13 +318,14 @@ async function showEmployeeForm(userId = null) {
         formTitle.textContent = 'Editar Empleado';
         saveBtn.textContent = 'Actualizar';
         roleSelector.parentElement.classList.remove('hidden');
-        const userSnap = await getDoc(doc(db, `artifacts/${appId}/public/data/users`, userId));
-        if (userSnap.exists()) { 
-            const userData = userSnap.data(); 
-            document.getElementById('employee-name-input').value = userData.name; 
-            document.getElementById('employee-pin-input').value = userData.pin;
-            roleSelector.value = userData.role || 'employee';
-        }
+        getDoc(doc(db, `artifacts/${appId}/public/data/users`, userId)).then(userSnap => {
+            if (userSnap.exists()) { 
+                const userData = userSnap.data(); 
+                document.getElementById('employee-name-input').value = userData.name; 
+                document.getElementById('employee-pin-input').value = userData.pin;
+                roleSelector.value = userData.role || 'employee';
+            }
+        });
     } else {
         formTitle.textContent = 'Añadir Nuevo Empleado';
         saveBtn.textContent = 'Guardar';
@@ -388,7 +387,7 @@ async function executeDelete(userId) {
     } catch (error) { console.error("Error al borrar empleado:", error); }
 }
 
-async function showShiftForm(shiftId = null) {
+function showShiftForm(shiftId = null) {
     editingShiftId = shiftId;
     document.getElementById('shift-form-container').classList.remove('hidden');
     document.getElementById('add-shift-btn').classList.add('hidden');
@@ -398,15 +397,16 @@ async function showShiftForm(shiftId = null) {
     const modalTitle = document.getElementById('shift-form-title');
     if (editingShiftId) {
         modalTitle.textContent = 'Editar Fichaje';
-        const shiftSnap = await getDoc(doc(db, `artifacts/${appId}/public/data/shifts`, editingShiftId));
-        if (shiftSnap.exists()) {
-            const shift = shiftSnap.data();
-            const start = shift.startTime.toDate();
-            const end = shift.endTime.toDate();
-            document.getElementById('shift-date').value = start.toISOString().split('T')[0];
-            document.getElementById('start-time').value = start.toTimeString().substring(0, 5);
-            document.getElementById('end-time').value = end.toTimeString().substring(0, 5);
-        }
+        getDoc(doc(db, `artifacts/${appId}/public/data/shifts`, editingShiftId)).then(shiftSnap => {
+            if (shiftSnap.exists()) {
+                const shift = shiftSnap.data();
+                const start = shift.startTime.toDate();
+                const end = shift.endTime.toDate();
+                document.getElementById('shift-date').value = start.toISOString().split('T')[0];
+                document.getElementById('start-time').value = start.toTimeString().substring(0, 5);
+                document.getElementById('end-time').value = end.toTimeString().substring(0, 5);
+            }
+        });
     } else { modalTitle.textContent = 'Añadir Fichaje Olvidado'; }
 }
 
@@ -447,7 +447,6 @@ async function saveCompanyDetails() {
         setTimeout(() => { successMsg.classList.add('hidden'); }, 3000);
     } catch (error) {
         console.error("Error al guardar datos de la empresa:", error);
-        alert('Error al guardar los datos.');
     }
 }
 
@@ -604,29 +603,49 @@ async function generatePDF() {
 }
 
 function showView(viewName) { Object.values(views).forEach(view => view.style.display = 'none'); views[viewName].style.display = 'block'; }
-document.querySelectorAll('.pin-btn, .action-btn, .tab, .btn-primary, .btn-secondary, .form-input').forEach(el => {
-    const baseClasses = {
-        'pin-btn': 'w-full h-16 text-2xl font-bold rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-150',
-        'action-btn': 'w-full py-4 text-lg font-semibold rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-transform duration-150 hover:scale-105 disabled:bg-slate-300 disabled:cursor-not-allowed disabled:hover:scale-100',
-        'tab': 'px-3 py-2 font-medium text-sm rounded-t-lg text-slate-500 hover:text-slate-700 border-b-2 border-transparent',
-        'btn-primary': 'px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md',
-        'btn-secondary': 'px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-md',
-        'form-input': 'mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500'
-    };
-    Object.keys(baseClasses).forEach(key => { if(el.classList.contains(key)) el.classList.add(...baseClasses[key].split(' ')); });
-    if(el.classList.contains('pin-btn') && !el.classList.contains('bg-indigo-600') && !el.classList.contains('bg-yellow-500')) el.classList.add('bg-slate-200', 'hover:bg-slate-300');
-});
-document.querySelectorAll('.tab-active').forEach(tab => { tab.classList.add('border-indigo-500', 'text-indigo-600'); tab.classList.remove('text-slate-500', 'border-transparent'); });
+
+function initializeEventListeners() {
+    document.getElementById('pin-pad').addEventListener('click', (e) => {
+        if (e.target.closest('button')?.dataset.pin) {
+            enterPin(e.target.closest('button').dataset.pin);
+        }
+    });
+    document.getElementById('clear-pin-btn').addEventListener('click', clearPin);
+    document.getElementById('login-btn').addEventListener('click', login);
+    document.getElementById('logout-btn-employee').addEventListener('click', logout);
+    document.getElementById('logout-btn-manager').addEventListener('click', logout);
+    document.getElementById('clock-in-btn').addEventListener('click', clockIn);
+    document.getElementById('clock-out-btn').addEventListener('click', clockOut);
+    document.getElementById('add-shift-btn').addEventListener('click', () => showShiftForm());
+    document.getElementById('shift-form').addEventListener('submit', (e) => { e.preventDefault(); saveShift(); });
+    document.getElementById('cancel-shift-btn').addEventListener('click', hideShiftForm);
+    document.getElementById('approve-hours-btn').addEventListener('click', openSignatureModal);
+    document.getElementById('clear-signature-btn').addEventListener('click', clearSignature);
+    document.getElementById('cancel-signature-btn').addEventListener('click', hideSignaturePad);
+    document.getElementById('save-signature-btn').addEventListener('click', saveSignature);
+    document.getElementById('tab-reports').addEventListener('click', () => switchTab('reports'));
+    document.getElementById('tab-employees').addEventListener('click', () => switchTab('employees'));
+    document.getElementById('tab-settings').addEventListener('click', () => switchTab('settings'));
+    document.getElementById('generate-pdf-btn').addEventListener('click', generatePDF);
+    document.getElementById('add-employee-btn').addEventListener('click', () => showEmployeeForm());
+    document.getElementById('employee-form').addEventListener('submit', (e) => { e.preventDefault(); saveEmployee(); });
+    document.getElementById('cancel-employee-form-btn').addEventListener('click', hideEmployeeForm);
+    document.getElementById('company-details-form').addEventListener('submit', (e) => { e.preventDefault(); saveCompanyDetails(); });
+    document.getElementById('logo-upload').addEventListener('change', handleLogoUpload);
+    document.getElementById('save-logo-btn').addEventListener('click', saveLogo);
+}
 
 // Expose functions to global scope
 Object.assign(window, {
     enterPin, clearPin, login, logout, clockIn, clockOut,
     showShiftForm, hideShiftForm, saveShift,
-    openSignatureModal, closeSignatureModal, clearModalSignature, saveSignature,
+    openSignatureModal, clearSignature, hideSignaturePad, saveSignature,
     switchTab, generatePDF, showEmployeeForm, hideEmployeeForm,
     saveEmployee, showDeleteConfirm, cancelDeleteConfirm, executeDelete,
-    saveCompanyDetails, saveLogo, handleLogoUpload
+    saveCompanyDetails, saveLogo, handleLogoUpload,
+    approveShift, rejectShift
 });
+
     </script>
 </body>
 </html>
