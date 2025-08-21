@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CampiClock - Sistema de Fichaje</title>
+    
+    <!-- Estilos CSS -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Librerías Externas -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/signature_pad/4.0.0/signature_pad.umd.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="data:application/manifest+json,{
+        &quot;name&quot;: &quot;CampiClock&quot;,
+        &quot;short_name&quot;: &quot;CampiClock&quot;,
+        &quot;start_url&quot;: &quot;.&quot;,
+        &quot;display&quot;: &quot;standalone&quot;,
+        &quot;background_color&quot;: &quot;#ffffff&quot;,
+        &quot;theme_color&quot;: &quot;#4f46e5&quot;,
+        &quot;description&quot;: &quot;App de Fichaje Horario para Restaurantes&quot;,
+        &quot;icons&quot;: [{
+            &quot;src&quot;: &quot;https://placehold.co/192x192/4f46e5/ffffff?text=CC&quot;,
+            &quot;sizes&quot;: &quot;192x192&quot;,
+            &quot;type&quot;: &quot;image/png&quot;
+        }, {
+            &quot;src&quot;: &quot;https://placehold.co/512x512/4f46e5/ffffff?text=CC&quot;,
+            &quot;sizes&quot;: &quot;512x512&quot;,
+            &quot;type&quot;: &quot;image/png&quot;
+        }]
+    }">
+</head>
+<body class="bg-slate-100 text-slate-800 flex items-center justify-center min-h-screen">
+
+    <div class="container mx-auto p-4 max-w-5xl">
+
+        <div id="loading-view" class="text-center">
+            <i class="fas fa-spinner fa-spin text-4xl text-indigo-600"></i>
+            <p class="mt-4 text-lg">Cargando datos...</p>
+        </div>
+
+        <div id="login-view">
+            <div class="bg-white p-8 rounded-xl shadow-lg max-w-sm mx-auto">
+                <div class="text-center mb-6">
+                    <img id="login-logo" src="https://placehold.co/200x80/e2e8f0/475569?text=Logo" alt="Logo del Restaurante" class="h-16 mx-auto mb-4 object-contain">
+                    <h1 class="text-2xl font-bold">CampiClock</h1>
+                    <p class="text-slate-500">Introduce tu PIN de empleado</p>
+                </div>
+                <div id="pin-display" class="bg-slate-100 text-center text-3xl font-mono tracking-widest h-16 flex items-center justify-center rounded-lg mb-4"></div>
+                <div class="grid grid-cols-3 gap-4">
+                    <button onclick="enterPin('1')" class="pin-btn">1</button>
+                    <button onclick="enterPin('2')" class="pin-btn">2</button>
+                    <button onclick="enterPin('3')" class="pin-btn">3</button>
+                    <button onclick="enterPin('4')" class="pin-btn">4</button>
+                    <button onclick="enterPin('5')" class="pin-btn">5</button>
+                    <button onclick="enterPin('6')" class="pin-btn">6</button>
+                    <button onclick="enterPin('7')" class="pin-btn">7</button>
+                    <button onclick="enterPin('8')" class="pin-btn">8</button>
+                    <button onclick="enterPin('9')" class="pin-btn">9</button>
+                    <button onclick="clearPin()" class="pin-btn bg-yellow-500 hover:bg-yellow-600 text-white"><i class="fas fa-times"></i></button>
+                    <button onclick="enterPin('0')" class="pin-btn">0</button>
+                    <button onclick="login()" class="pin-btn bg-indigo-600 hover:bg-indigo-700 text-white"><i class="fas fa-check"></i></button>
+                </div>
+                <p id="login-error" class="text-red-500 text-center mt-4 h-4"></p>
+            </div>
+        </div>
+
+        <div id="employee-view" class="bg-white p-8 rounded-xl shadow-lg">
+            <div class="flex justify-between items-center mb-6">
+                <div><h2 class="text-2xl font-bold">Hola, <span id="employee-name"></span></h2><p class="text-slate-500">Listo para empezar tu jornada</p></div>
+                <button onclick="logout()" class="text-slate-500 hover:text-indigo-600"><i class="fas fa-sign-out-alt fa-lg"></i></button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <button id="clock-in-btn" onclick="clockIn()" class="action-btn bg-green-500 hover:bg-green-600 text-white"><i class="fas fa-play-circle mr-2"></i> Iniciar Turno</button>
+                <button id="clock-out-btn" onclick="clockOut()" class="action-btn bg-red-500 hover:bg-red-600 text-white" disabled><i class="fas fa-stop-circle mr-2"></i> Finalizar Turno</button>
+            </div>
+            <p id="clock-status" class="text-center text-slate-600 mb-6 h-6"></p>
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-xl font-semibold">Resumen de Horas (<span id="current-month"></span>)</h3>
+                <button id="add-shift-btn" onclick="showShiftForm()" class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-sm flex items-center"><i class="fas fa-plus mr-2"></i>Añadir fichaje</button>
+            </div>
+            <div id="shift-form-container" class="hidden bg-slate-50 p-4 rounded-lg my-4">
+                <h3 id="shift-form-title" class="text-lg font-bold mb-4">Añadir Fichaje Olvidado</h3>
+                <form id="shift-form" onsubmit="event.preventDefault(); saveShift();">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div><label for="shift-date" class="block text-sm font-medium text-slate-700">Fecha</label><input type="date" id="shift-date" required class="form-input"></div><div></div>
+                        <div><label for="start-time" class="block text-sm font-medium text-slate-700">Hora Entrada</label><input type="time" id="start-time" required class="form-input"></div>
+                        <div><label for="end-time" class="block text-sm font-medium text-slate-700">Hora Salida</label><input type="time" id="end-time" required class="form-input"></div>
+                    </div>
+                    <p id="shift-modal-error" class="text-red-500 text-sm mt-2 h-4"></p>
+                    <div class="mt-6 flex justify-end gap-3"><button type="button" onclick="hideShiftForm()" class="btn-secondary">Cancelar</button><button type="submit" class="btn-primary">Solicitar Cambio</button></div>
+                </form>
+            </div>
+            <div class="overflow-x-auto bg-slate-50 p-4 rounded-lg">
+                <table class="w-full text-left"><thead><tr class="border-b"><th class="p-2">Fecha</th><th class="p-2">Entrada</th><th class="p-2">Salida</th><th class="p-2">Total Horas</th><th class="p-2">Estado</th><th class="p-2"></th></tr></thead><tbody id="shifts-table-body"></tbody></table>
+            </div>
+            <div class="flex justify-end items-center mt-4 gap-4">
+                <div class="text-right font-bold text-lg">Total Mensual (Aprobado): <span id="total-hours">0.00</span> horas</div>
+                <div id="signature-controls">
+                    <button id="approve-hours-btn" onclick="showSignaturePad()" class="btn-primary hidden"><i class="fas fa-signature mr-2"></i>Aprobar y Firmar Resumen</button>
+                    <div id="signed-message" class="hidden text-green-600 font-semibold flex items-center gap-2"><i class="fas fa-check-circle"></i>Resumen Firmado</div>
+                </div>
+            </div>
+             <div id="signature-container" class="hidden bg-slate-50 p-4 rounded-lg mt-4">
+                <h3 class="text-lg font-bold mb-4">Firmar Resumen de Horas</h3>
+                <p class="text-slate-600 mb-4">Al firmar, confirmas que los datos son correctos.</p>
+                <canvas id="signature-canvas" class="signature-canvas w-full h-48 bg-white"></canvas>
+                <p id="signature-error" class="text-red-500 text-sm mt-2 h-4 text-right"></p>
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" onclick="clearSignature()" class="btn-secondary">Limpiar</button>
+                    <button type="button" onclick="hideSignaturePad()" class="btn-secondary">Cancelar</button>
+                    <button type="button" onclick="saveSignature()" class="btn-primary">Guardar Firma</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="manager-view" class="bg-white p-8 rounded-xl shadow-lg">
+            <div class="flex justify-between items-center mb-6">
+                <div><h2 class="text-2xl font-bold">Panel de Gestión</h2><p class="text-slate-500">Supervisa los registros y gestiona tu equipo</p></div>
+                <button onclick="logout()" class="text-slate-500 hover:text-indigo-600"><i class="fas fa-sign-out-alt fa-lg"></i></button>
+            </div>
+            <div class="mb-6 border-b border-slate-200"><nav class="flex space-x-4" aria-label="Tabs"><button onclick="switchTab('reports')" id="tab-reports" class="tab tab-active"><i class="fas fa-file-alt mr-2"></i>Informes</button><button onclick="switchTab('employees')" id="tab-employees" class="tab"><i class="fas fa-users mr-2"></i>Empleados</button><button onclick="switchTab('settings')" id="tab-settings" class="tab"><i class="fas fa-cog mr-2"></i>Configuración</button></nav></div>
+            <div id="reports-content">
+                <div class="flex flex-wrap gap-4 mb-6 items-center bg-slate-50 p-4 rounded-lg"><label class="block text-sm font-medium text-slate-700">Empleado</label><select id="employee-select" class="form-input"></select><div><label for="month-select" class="block text-sm font-medium text-slate-700">Mes</label><input type="month" id="month-select" class="form-input"></div><div class="self-end"><button onclick="generatePDF()" class="btn-primary flex items-center"><i class="fas fa-file-pdf mr-2"></i> Generar PDF</button></div></div>
+                <h3 class="text-xl font-semibold mb-2">Registros de <span id="manager-employee-name"></span> para <span id="manager-month-display"></span></h3>
+                <div class="overflow-x-auto bg-slate-50 p-4 rounded-lg"><table class="w-full text-left"><thead><tr class="border-b"><th class="p-2">Fecha</th><th class="p-2">Entrada</th><th class="p-2">Salida</th><th class="p-2">Total Horas</th><th class="p-2">Acciones</th></tr></thead><tbody id="manager-shifts-table-body"></tbody></table></div>
+                 <div class="text-right font-bold text-lg mt-4">Total Mensual (Aprobado): <span id="manager-total-hours">0.00</span> horas</div>
+                 <div id="manager-signature-display" class="mt-6 pt-4 border-t"></div>
+            </div>
+            <div id="employees-content" class="hidden">
+                <div class="flex justify-between items-center mb-4"><h3 class="text-xl font-semibold">Gestión de Empleados</h3><button id="add-employee-btn" onclick="showEmployeeForm()" class="btn-primary flex items-center"><i class="fas fa-plus mr-2"></i> Añadir Empleado</button></div>
+                <div id="employee-form-container" class="hidden bg-slate-50 p-4 rounded-lg mb-4">
+                    <h3 id="form-title" class="text-lg font-bold mb-4">Añadir Nuevo Empleado</h3>
+                    <form id="employee-form" onsubmit="event.preventDefault(); saveEmployee();">
+                        <input type="hidden" id="editing-user-id">
+                        <div><label for="employee-name-input" class="block text-sm font-medium text-slate-700">Nombre Completo</label><input type="text" id="employee-name-input" required class="form-input w-full"></div>
+                        <div class="mt-4"><label for="employee-pin-input" class="block text-sm font-medium text-slate-700">PIN (4 dígitos)</label><input type="text" id="employee-pin-input" required pattern="[0-9]{4}" title="El PIN debe contener exactamente 4 dígitos." maxlength="4" class="form-input w-full"></div>
+                        <div id="role-selector-container" class="mt-4">
+                            <label for="employee-role-select" class="block text-sm font-medium text-slate-700">Rol</label>
+                            <select id="employee-role-select" class="form-input w-full">
+                                <option value="employee">Empleado</option>
+                                <option value="manager">Administrador</option>
+                            </select>
+                        </div>
+                        <p id="modal-error" class="text-red-500 text-sm mt-2 h-4"></p>
+                        <div class="mt-6 flex justify-end gap-3"><button type="button" onclick="hideEmployeeForm()" class="btn-secondary">Cancelar</button><button type="submit" id="save-employee-btn" class="btn-primary">Guardar</button></div>
+                    </form>
+                </div>
+                <div id="employee-list" class="space-y-2"></div>
+            </div>
+            <div id="settings-content" class="hidden">
+                <h3 class="text-xl font-semibold mb-4">Configuración de la Empresa</h3>
+                <div class="space-y-6">
+                    <div class="bg-slate-50 p-4 rounded-lg">
+                        <h4 class="font-semibold mb-2">Datos de la Empresa</h4>
+                        <form id="company-details-form" onsubmit="event.preventDefault(); saveCompanyDetails();" class="space-y-4">
+                            <div><label for="company-name" class="block text-sm font-medium text-slate-700">Nombre de la Empresa</label><input type="text" id="company-name" class="form-input w-full"></div>
+                            <div><label for="company-cif" class="block text-sm font-medium text-slate-700">CIF/NIF</label><input type="text" id="company-cif" class="form-input w-full"></div>
+                            <div><label for="company-address" class="block text-sm font-medium text-slate-700">Dirección</label><input type="text" id="company-address" class="form-input w-full"></div>
+                            <div class="text-right flex items-center justify-end">
+                                <span id="company-details-success" class="text-green-600 text-sm mr-4 hidden">¡Datos guardados!</span>
+                                <button type="submit" class="btn-primary">Guardar Datos</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="bg-slate-50 p-4 rounded-lg">
+                        <h4 class="font-semibold mb-2">Logo</h4>
+                        <div class="flex items-center gap-4">
+                            <img id="logo-preview" src="https://placehold.co/100x100/e2e8f0/475569?text=Logo" class="h-20 w-20 object-contain border p-1 rounded-md bg-white">
+                            <div>
+                                <label for="logo-upload" class="btn-secondary cursor-pointer">Cambiar Logo</label>
+                                <input type="file" id="logo-upload" class="hidden" accept="image/*">
+                                <button id="save-logo-btn" onclick="saveLogo()" class="btn-primary mt-2 hidden">Guardar Logo</button>
+                                <p id="logo-save-success" class="text-green-600 text-sm mt-2 hidden">¡Logo guardado!</p>
+                                <p class="text-xs text-slate-500 mt-2">Sube un archivo de imagen (JPG, PNG, etc.)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Script de la aplicación -->
+    <script src="script.js" type="module" defer></script>
+</body>
+</html>
