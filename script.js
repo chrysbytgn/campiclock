@@ -1,17 +1,651 @@
-body {
-    font-family: 'Inter', sans-serif;
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getFirestore, collection, getDocs, query, where, addDoc, doc, updateDoc, onSnapshot, setDoc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-restaurant-app';
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+const views = { loading: document.getElementById('loading-view'), login: document.getElementById('login-view'), employee: document.getElementById('employee-view'), manager: document.getElementById('manager-view') };
+
+let currentUser = null, currentPin = '', activeShiftId = null, signaturePad, editingShiftId = null, tempLogoData = null;
+
+window.addEventListener('load', () => {
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            showView('login');
+            setupInitialData();
+            loadCompanyLogoForLogin();
+            initializeEventListeners();
+        } else {
+            (async () => {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) { console.error("Error de autenticación:", error); }
+            })();
+        }
+    });
+});
+
+async function setupInitialData() {
+    const setupDocRef = doc(db, `artifacts/${appId}/public/data/app_config`, 'initial_setup');
+    const docSnap = await getDoc(setupDocRef);
+
+    if (!docSnap.exists()) {
+        const usersRef = collection(db, `artifacts/${appId}/public/data/users`);
+        const usersData = [{ name: "Admin", pin: "0000", role: "manager" }];
+        for (const userData of usersData) { await addDoc(usersRef, userData); }
+        await setDoc(setupDocRef, { setupComplete: true });
+    }
 }
 
-#employee-view, #manager-view, #loading-view, .modal {
-    display: none;
+function enterPin(num) { if (currentPin.length < 4) { currentPin += num; updatePinDisplay(); } }
+function clearPin() { currentPin = ''; updatePinDisplay(); }
+function updatePinDisplay() { document.getElementById('pin-display').textContent = '*'.repeat(currentPin.length); }
+
+async function login() {
+    const loginError = document.getElementById('login-error');
+    loginError.textContent = '';
+    if (currentPin.length !== 4) { loginError.textContent = 'El PIN debe tener 4 dígitos.'; return; }
+    try {
+        const usersRef = collection(db, `artifacts/${appId}/public/data/users`);
+        const q = query(usersRef, where("pin", "==", currentPin));
+        const querySnapshot = await getDocs(q);
+        if (querySnapshot.empty) { loginError.textContent = 'PIN incorrecto.'; currentPin = ''; updatePinDisplay(); return; }
+        const userDoc = querySnapshot.docs[0];
+        currentUser = { id: userDoc.id, ...userDoc.data() };
+        if (currentUser.role === 'manager') { showView('manager'); await loadManagerView(); } 
+        else { showView('employee'); await loadEmployeeView(); }
+    } catch (error) { console.error("Error al iniciar sesión:", error); loginError.textContent = 'Error de conexión.'; }
 }
 
-.signature-canvas {
-    border: 2px dashed #cbd5e1;
-    border-radius: 0.5rem;
-    cursor: crosshair;
+function logout() { currentUser = null; currentPin = ''; activeShiftId = null; updatePinDisplay(); showView('login'); }
+
+async function loadEmployeeView() {
+    document.getElementById('employee-name').textContent = currentUser.name;
+    const now = new Date();
+    const monthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const monthName = now.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+    document.getElementById('current-month').textContent = monthName;
+    listenForShifts(currentUser.id, monthYear, 'employee');
+    updateSignatureButtonState(currentUser.id, monthYear);
 }
 
-.pending-approval {
-    background-color: #fef9c3; /* Amarillo claro */
+function listenForShifts(userId, monthYear, viewType) {
+    const [year, month] = monthYear.split('-').map(Number);
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 1);
+    const shiftsRef = collection(db, `artifacts/${appId}/public/data/shifts`);
+    const q = query(shiftsRef, where("userId", "==", userId));
+    onSnapshot(q, (snapshot) => {
+        const allUserShifts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const monthShifts = allUserShifts.filter(shift => {
+            const shiftDate = shift.startTime.toDate();
+            return shiftDate >= startDate && shiftDate < endDate;
+        });
+        monthShifts.sort((a, b) => b.startTime.toDate() - a.startTime.toDate());
+        if (viewType === 'employee') {
+            updateEmployeeShiftsUI(monthShifts);
+        } else {
+            updateManagerShiftsUI(monthShifts);
+        }
+    }, console.error);
 }
+
+function updateEmployeeShiftsUI(shifts) {
+    let totalMinutes = 0;
+    activeShiftId = null;
+    shifts.forEach(shift => {
+        if (shift.status === 'completed') { totalMinutes += (shift.endTime.toDate() - shift.startTime.toDate()) / 60000; } 
+        else if (shift.status === 'in-progress') { activeShiftId = shift.id; }
+    });
+    updateEmployeeShiftsTable(shifts);
+    updateClockButtons();
+    document.getElementById('total-hours').textContent = (totalMinutes / 60).toFixed(2);
+}
+
+function updateEmployeeShiftsTable(shifts) {
+    const tableBody = document.getElementById('shifts-table-body');
+    tableBody.innerHTML = '';
+    if (shifts.length === 0) { tableBody.innerHTML = '<tr><td colspan="6" class="p-2 text-center text-slate-500">No hay registros este mes.</td></tr>'; return; }
+    shifts.forEach(shift => {
+        const start = shift.startTime.toDate();
+        const end = shift.endTime ? shift.endTime.toDate() : null;
+        const totalHours = end ? ((end - start) / 3600000).toFixed(2) : 'En curso';
+        const statusMap = { completed: '<span class="text-green-600">Aprobado</span>', pending_approval: '<span class="text-yellow-600">Pendiente</span>', in_progress: '<span class="text-blue-600">En curso</span>' };
+        const rowClass = shift.status === 'pending_approval' ? 'pending-approval' : '';
+        tableBody.innerHTML += `<tr class="${rowClass} border-b last:border-b-0"><td class="p-2">${start.toLocaleDateString('es-ES')}</td><td class="p-2">${start.toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'})}</td><td class="p-2">${end ? end.toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'}) : '-'}</td><td class="p-2">${totalHours}</td><td class="p-2">${statusMap[shift.status] || ''}</td><td class="p-2 text-right">${shift.status !== 'in_progress' ? `<button onclick="showShiftForm('${shift.id}')" class="text-blue-600 hover:text-blue-800"><i class="fas fa-edit"></i></button>` : ''}</td></tr>`;
+    });
+}
+
+function updateClockButtons() {
+    const clockInBtn = document.getElementById('clock-in-btn'), clockOutBtn = document.getElementById('clock-out-btn'), clockStatus = document.getElementById('clock-status');
+    if (activeShiftId) { clockInBtn.disabled = true; clockOutBtn.disabled = false; clockStatus.textContent = 'Turno en progreso.'; clockStatus.classList.add('text-green-600'); } 
+    else { clockInBtn.disabled = false; clockOutBtn.disabled = true; clockStatus.textContent = ''; clockStatus.classList.remove('text-green-600'); }
+}
+
+async function clockIn() { if (activeShiftId) return; try { const shiftsRef = collection(db, `artifacts/${appId}/public/data/shifts`); const docRef = await addDoc(shiftsRef, { userId: currentUser.id, startTime: new Date(), endTime: null, status: 'in-progress' }); activeShiftId = docRef.id; } catch (error) { console.error("Error al iniciar turno:", error); } }
+async function clockOut() { if (!activeShiftId) return; try { const shiftDocRef = doc(db, `artifacts/${appId}/public/data/shifts`, activeShiftId); await updateDoc(shiftDocRef, { endTime: new Date(), status: 'completed' }); activeShiftId = null; } catch (error) { console.error("Error al finalizar turno:", error); } }
+
+async function updateSignatureButtonState(userId, monthYear) {
+    const approveBtn = document.getElementById('approve-hours-btn');
+    const signedMsg = document.getElementById('signed-message');
+    
+    approveBtn.classList.add('hidden');
+    signedMsg.classList.add('hidden');
+
+    const signatureDocRef = doc(db, `artifacts/${appId}/public/data/signatures`, `${userId}_${monthYear}`);
+    const docSnap = await getDoc(signatureDocRef);
+
+    if (docSnap.exists()) {
+        signedMsg.classList.remove('hidden');
+        return;
+    }
+
+    const today = new Date();
+    const [year, month] = monthYear.split('-').map(Number);
+    const lastDayOfMonth = new Date(year, month, 0);
+    const firstDayOfNextMonth = new Date(year, month, 1);
+    const signingDeadline = new Date(firstDayOfNextMonth.setDate(firstDayOfNextMonth.getDate() + 4));
+
+    if (today >= lastDayOfMonth && today <= signingDeadline) {
+        approveBtn.classList.remove('hidden');
+    }
+}
+
+function openSignatureModal() {
+    document.getElementById('signature-container').classList.remove('hidden');
+    const canvas = document.getElementById('signature-canvas');
+    signaturePad = new SignaturePad(canvas, { backgroundColor: 'rgb(255, 255, 255)' });
+}
+
+function hideSignaturePad() {
+    document.getElementById('signature-container').classList.add('hidden');
+    if(signaturePad) signaturePad.clear();
+    signaturePad = null;
+}
+
+function clearSignature() {
+    if(signaturePad) signaturePad.clear();
+}
+
+async function saveSignature() {
+    const signatureError = document.getElementById('signature-error');
+    signatureError.textContent = '';
+    if (signaturePad.isEmpty()) { signatureError.textContent = "Por favor, proporciona una firma."; return; }
+    const signatureDataURL = signaturePad.toDataURL();
+    const now = new Date();
+    const monthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    try {
+        const signatureDocRef = doc(db, `artifacts/${appId}/public/data/signatures`, `${currentUser.id}_${monthYear}`);
+        await setDoc(signatureDocRef, { userId: currentUser.id, monthYear: monthYear, signatureData: signatureDataURL, signedAt: new Date() });
+        hideSignaturePad();
+        updateSignatureButtonState(currentUser.id, monthYear);
+    } catch (error) { console.error("Error al guardar la firma:", error); signatureError.textContent = "Error al guardar la firma."; }
+}
+
+async function loadManagerView() {
+    const monthSelect = document.getElementById('month-select');
+    monthSelect.value = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    await populateEmployeeDropdown();
+    await renderEmployeeList();
+    await loadCompanySettings();
+    updateManagerShiftView();
+}
+
+function switchTab(tabName) {
+    document.getElementById('reports-content').style.display = tabName === 'reports' ? 'block' : 'none';
+    document.getElementById('employees-content').style.display = tabName === 'employees' ? 'block' : 'none';
+    document.getElementById('settings-content').style.display = tabName === 'settings' ? 'block' : 'none';
+    document.getElementById('tab-reports').classList.toggle('tab-active', tabName === 'reports');
+    document.getElementById('tab-employees').classList.toggle('tab-active', tabName === 'employees');
+    document.getElementById('tab-settings').classList.toggle('tab-active', tabName === 'settings');
+}
+
+function updateManagerShiftView() {
+    const employeeSelect = document.getElementById('employee-select');
+    if (!employeeSelect.value) {
+        document.getElementById('manager-shifts-table-body').innerHTML = '<tr><td colspan="5" class="p-2 text-center text-slate-500">No hay empleados seleccionados.</td></tr>';
+        document.getElementById('manager-total-hours').textContent = '0.00';
+        document.getElementById('manager-employee-name').textContent = 'N/A';
+        document.getElementById('manager-month-display').textContent = 'N/A';
+        document.getElementById('manager-signature-display').innerHTML = '';
+        return;
+    }
+    const employeeId = employeeSelect.value;
+    const monthYear = document.getElementById('month-select').value;
+    const selectedEmployeeName = employeeSelect.options[employeeSelect.selectedIndex].text;
+    const [year, month] = monthYear.split('-');
+    const monthName = new Date(year, month - 1).toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+    document.getElementById('manager-employee-name').textContent = selectedEmployeeName;
+    document.getElementById('manager-month-display').textContent = monthName;
+    listenForShifts(employeeId, monthYear, 'manager');
+    updateManagerSignatureDisplay(employeeId, monthYear);
+}
+
+function updateManagerShiftsUI(shifts) {
+    const tableBody = document.getElementById('manager-shifts-table-body');
+    tableBody.innerHTML = '';
+    let totalMinutes = 0;
+    if (shifts.length === 0) { tableBody.innerHTML = '<tr><td colspan="5" class="p-2 text-center text-slate-500">No hay registros para esta selección.</td></tr>'; }
+    else {
+        shifts.forEach(shift => {
+            if (shift.status === 'completed') { totalMinutes += (shift.endTime.toDate() - shift.startTime.toDate()) / 60000; }
+            const start = shift.startTime.toDate();
+            const end = shift.endTime ? shift.endTime.toDate() : null;
+            const totalHours = end ? ((end - start) / 3600000).toFixed(2) : '-';
+            const rowClass = shift.status === 'pending_approval' ? 'pending-approval' : '';
+            let actionsHtml = '-';
+            if (shift.status === 'pending_approval') {
+                actionsHtml = `<div class="flex gap-2"><button onclick="approveShift('${shift.id}')" class="text-green-600 hover:text-green-800"><i class="fas fa-check"></i></button><button onclick="rejectShift('${shift.id}')" class="text-red-600 hover:text-red-800"><i class="fas fa-times"></i></button></div>`;
+            }
+            tableBody.innerHTML += `<tr class="${rowClass} border-b last:border-b-0"><td class="p-2">${start.toLocaleDateString('es-ES')}</td><td class="p-2">${start.toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'})}</td><td class="p-2">${end ? end.toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'}) : '-'}</td><td class="p-2">${totalHours}</td><td class="p-2">${actionsHtml}</td></tr>`;
+        });
+    }
+    document.getElementById('manager-total-hours').textContent = (totalMinutes / 60).toFixed(2);
+}
+
+async function updateManagerSignatureDisplay(employeeId, monthYear) {
+    const signatureDisplay = document.getElementById('manager-signature-display');
+    const signatureDocRef = doc(db, `artifacts/${appId}/public/data/signatures`, `${employeeId}_${monthYear}`);
+    const docSnap = await getDoc(signatureDocRef);
+    if (docSnap.exists()) {
+        const signatureData = docSnap.data();
+        signatureDisplay.innerHTML = `<h4 class="font-semibold">Firma del Empleado</h4><img src="${signatureData.signatureData}" alt="Firma" class="mt-2 border rounded-md bg-white"/><p class="text-sm text-slate-500 mt-1">Firmado el: ${signatureData.signedAt.toDate().toLocaleString('es-ES')}</p>`;
+    } else { signatureDisplay.innerHTML = '<p class="text-slate-500">Este parte de horas aún no ha sido firmado.</p>'; }
+}
+
+async function approveShift(shiftId) { try { await updateDoc(doc(db, `artifacts/${appId}/public/data/shifts`, shiftId), { status: 'completed' }); } catch (e) { console.error(e); } }
+async function rejectShift(shiftId) { try { await deleteDoc(doc(db, `artifacts/${appId}/public/data/shifts`, shiftId)); } catch (e) { console.error(e); } }
+
+async function populateEmployeeDropdown() {
+    const employeeSelect = document.getElementById('employee-select');
+    const usersRef = collection(db, `artifacts/${appId}/public/data/users`);
+    const q = query(usersRef, where("role", "==", "employee"));
+    const querySnapshot = await getDocs(q);
+    const currentSelection = employeeSelect.value;
+    employeeSelect.innerHTML = '';
+    querySnapshot.forEach(doc => { const option = document.createElement('option'); option.value = doc.id; option.textContent = doc.data().name; employeeSelect.appendChild(option); });
+    if (currentSelection) employeeSelect.value = currentSelection;
+}
+
+async function renderEmployeeList() {
+    const employeeListDiv = document.getElementById('employee-list');
+    const usersRef = collection(db, `artifacts/${appId}/public/data/users`);
+    const snapshot = await getDocs(usersRef);
+    employeeListDiv.innerHTML = '';
+    if (snapshot.empty) { employeeListDiv.innerHTML = '<p class="text-slate-500 text-center p-4">No hay empleados registrados.</p>'; return; }
+    snapshot.forEach(doc => {
+        const employee = { id: doc.id, ...doc.data() };
+        employeeListDiv.innerHTML += `
+            <div id="employee-${employee.id}" class="bg-slate-50 p-3 rounded-lg flex justify-between items-center">
+                <div>
+                    <p class="font-semibold">${employee.name}</p>
+                    <p class="text-sm text-slate-500">PIN: ${employee.pin} | Rol: ${employee.role === 'manager' ? 'Admin' : 'Empleado'}</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button onclick="showEmployeeForm('${employee.id}')" class="text-blue-600 hover:text-blue-800"><i class="fas fa-edit"></i></button>
+                    <div id="delete-confirm-${employee.id}" class="hidden items-center space-x-2">
+                        <span class="text-sm text-red-600">¿Seguro?</span>
+                        <button onclick="executeDelete('${employee.id}')" class="px-2 py-1 text-xs bg-red-600 text-white rounded">Sí</button>
+                        <button onclick="cancelDeleteConfirm('${employee.id}')" class="px-2 py-1 text-xs bg-slate-400 text-white rounded">No</button>
+                    </div>
+                    <button id="delete-btn-${employee.id}" onclick="showDeleteConfirm('${employee.id}')" class="text-red-600 hover:text-red-800"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>`;
+    });
+}
+
+function showEmployeeForm(userId = null) {
+    document.getElementById('employee-form-container').classList.remove('hidden');
+    document.getElementById('add-employee-btn').classList.add('hidden');
+    const form = document.getElementById('employee-form');
+    form.reset();
+    document.getElementById('modal-error').textContent = '';
+    const formTitle = document.getElementById('form-title');
+    const saveBtn = document.getElementById('save-employee-btn');
+    const roleSelector = document.getElementById('employee-role-select');
+    document.getElementById('editing-user-id').value = userId || '';
+
+    if (userId) {
+        formTitle.textContent = 'Editar Empleado';
+        saveBtn.textContent = 'Actualizar';
+        roleSelector.parentElement.classList.remove('hidden');
+        getDoc(doc(db, `artifacts/${appId}/public/data/users`, userId)).then(userSnap => {
+            if (userSnap.exists()) { 
+                const userData = userSnap.data(); 
+                document.getElementById('employee-name-input').value = userData.name; 
+                document.getElementById('employee-pin-input').value = userData.pin;
+                roleSelector.value = userData.role || 'employee';
+            }
+        });
+    } else {
+        formTitle.textContent = 'Añadir Nuevo Empleado';
+        saveBtn.textContent = 'Guardar';
+        roleSelector.parentElement.classList.remove('hidden');
+        roleSelector.value = 'employee';
+    }
+}
+
+function hideEmployeeForm() {
+    document.getElementById('employee-form-container').classList.add('hidden');
+    document.getElementById('add-employee-btn').classList.remove('hidden');
+}
+
+function showDeleteConfirm(userId) {
+    document.getElementById(`delete-confirm-${userId}`).classList.remove('hidden');
+    document.getElementById(`delete-confirm-${userId}`).classList.add('flex');
+    document.getElementById(`delete-btn-${userId}`).classList.add('hidden');
+}
+
+function cancelDeleteConfirm(userId) {
+    document.getElementById(`delete-confirm-${userId}`).classList.add('hidden');
+    document.getElementById(`delete-confirm-${userId}`).classList.remove('flex');
+    document.getElementById(`delete-btn-${userId}`).classList.remove('hidden');
+}
+
+async function saveEmployee() {
+    const editingUserId = document.getElementById('editing-user-id').value;
+    const name = document.getElementById('employee-name-input').value.trim();
+    const pin = document.getElementById('employee-pin-input').value.trim();
+    const role = document.getElementById('employee-role-select').value;
+    const modalError = document.getElementById('modal-error');
+    if (!name || !pin || !/^\d{4}$/.test(pin)) { modalError.textContent = 'Por favor, completa todos los campos correctamente.'; return; }
+    const usersRef = collection(db, `artifacts/${appId}/public/data/users`);
+    const q = query(usersRef, where("pin", "==", pin));
+    const snapshot = await getDocs(q);
+    let pinExists = false;
+    snapshot.forEach(doc => { if (doc.id !== editingUserId) { pinExists = true; } });
+    if (pinExists) { modalError.textContent = 'Este PIN ya está en uso.'; return; }
+    
+    const userData = { name, pin, role };
+
+    try {
+        if (editingUserId) { await updateDoc(doc(db, `artifacts/${appId}/public/data/users`, editingUserId), userData); } 
+        else { await addDoc(usersRef, userData); }
+        hideEmployeeForm();
+        await renderEmployeeList();
+        await populateEmployeeDropdown();
+        updateManagerShiftView();
+    } catch (error) { console.error("Error al guardar empleado:", error); modalError.textContent = 'Error al guardar. Inténtalo de nuevo.'; }
+}
+
+async function executeDelete(userId) {
+    if (!userId) return;
+    try {
+        await deleteDoc(doc(db, `artifacts/${appId}/public/data/users`, userId));
+        await renderEmployeeList();
+        await populateEmployeeDropdown();
+        updateManagerShiftView();
+    } catch (error) { console.error("Error al borrar empleado:", error); }
+}
+
+function showShiftForm(shiftId = null) {
+    editingShiftId = shiftId;
+    document.getElementById('shift-form-container').classList.remove('hidden');
+    document.getElementById('add-shift-btn').classList.add('hidden');
+    const form = document.getElementById('shift-form');
+    form.reset();
+    document.getElementById('shift-modal-error').textContent = '';
+    const modalTitle = document.getElementById('shift-form-title');
+    if (editingShiftId) {
+        modalTitle.textContent = 'Editar Fichaje';
+        getDoc(doc(db, `artifacts/${appId}/public/data/shifts`, editingShiftId)).then(shiftSnap => {
+            if (shiftSnap.exists()) {
+                const shift = shiftSnap.data();
+                const start = shift.startTime.toDate();
+                const end = shift.endTime.toDate();
+                document.getElementById('shift-date').value = start.toISOString().split('T')[0];
+                document.getElementById('start-time').value = start.toTimeString().substring(0, 5);
+                document.getElementById('end-time').value = end.toTimeString().substring(0, 5);
+            }
+        });
+    } else { modalTitle.textContent = 'Añadir Fichaje Olvidado'; }
+}
+
+function hideShiftForm() {
+    document.getElementById('shift-form-container').classList.add('hidden');
+    document.getElementById('add-shift-btn').classList.remove('hidden');
+    editingShiftId = null;
+}
+
+async function saveShift() {
+    const date = document.getElementById('shift-date').value;
+    const startTime = document.getElementById('start-time').value;
+    const endTime = document.getElementById('end-time').value;
+    const modalError = document.getElementById('shift-modal-error');
+    if (!date || !startTime || !endTime) { modalError.textContent = 'Todos los campos son obligatorios.'; return; }
+    const startDateTime = new Date(`${date}T${startTime}`);
+    const endDateTime = new Date(`${date}T${endTime}`);
+    if (endDateTime <= startDateTime) { modalError.textContent = 'La hora de salida debe ser posterior a la de entrada.'; return; }
+    const shiftData = { userId: currentUser.id, startTime: startDateTime, endTime: endDateTime, status: 'pending_approval' };
+    try {
+        if (editingShiftId) { await updateDoc(doc(db, `artifacts/${appId}/public/data/shifts`, editingShiftId), shiftData); } 
+        else { await addDoc(collection(db, `artifacts/${appId}/public/data/shifts`), shiftData); }
+        hideShiftForm();
+    } catch (error) { console.error("Error al guardar fichaje:", error); modalError.textContent = 'Error al guardar.'; }
+}
+
+async function saveCompanyDetails() {
+    const companyDetails = {
+        name: document.getElementById('company-name').value,
+        cif: document.getElementById('company-cif').value,
+        address: document.getElementById('company-address').value,
+    };
+    try {
+        const companyDocRef = doc(db, `artifacts/${appId}/public/data/company_details`, 'main');
+        await setDoc(companyDocRef, companyDetails, { merge: true });
+        const successMsg = document.getElementById('company-details-success');
+        successMsg.classList.remove('hidden');
+        setTimeout(() => { successMsg.classList.add('hidden'); }, 3000);
+    } catch (error) {
+        console.error("Error al guardar datos de la empresa:", error);
+    }
+}
+
+async function loadCompanySettings() {
+    const companyDocRef = doc(db, `artifacts/${appId}/public/data/company_details`, 'main');
+    const docSnap = await getDoc(companyDocRef);
+    if (docSnap.exists()) {
+        const data = docSnap.data();
+        document.getElementById('company-name').value = data.name || '';
+        document.getElementById('company-cif').value = data.cif || '';
+        document.getElementById('company-address').value = data.address || '';
+        if (data.logo) {
+            document.getElementById('logo-preview').src = data.logo;
+        }
+    }
+}
+
+async function loadCompanyLogoForLogin() {
+    const companyDocRef = doc(db, `artifacts/${appId}/public/data/company_details`, 'main');
+    const docSnap = await getDoc(companyDocRef);
+    if (docSnap.exists() && docSnap.data().logo) {
+        document.getElementById('login-logo').src = docSnap.data().logo;
+    }
+}
+
+async function resizeImage(file, maxWidth, maxHeight) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height *= maxWidth / width;
+                        width = maxWidth;
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width *= maxHeight / height;
+                        height = maxHeight;
+                    }
+                }
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/png'));
+            };
+            img.onerror = reject;
+        };
+        reader.onerror = reject;
+    });
+}
+
+async function handleLogoUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+        const resizedLogo = await resizeImage(file, 400, 200);
+        document.getElementById('logo-preview').src = resizedLogo;
+        tempLogoData = resizedLogo;
+        document.getElementById('save-logo-btn').classList.remove('hidden');
+    } catch (error) {
+        console.error("Error al redimensionar la imagen:", error);
+        alert("Hubo un problema al procesar la imagen.");
+    }
+}
+
+async function saveLogo() {
+    if (!tempLogoData) {
+        alert('Primero selecciona un nuevo logo para subir.');
+        return;
+    }
+    try {
+        const companyDocRef = doc(db, `artifacts/${appId}/public/data/company_details`, 'main');
+        await setDoc(companyDocRef, { logo: tempLogoData }, { merge: true });
+        const successMsg = document.getElementById('logo-save-success');
+        successMsg.classList.remove('hidden');
+        setTimeout(() => { successMsg.classList.add('hidden'); }, 3000);
+        loadCompanyLogoForLogin();
+        document.getElementById('save-logo-btn').classList.add('hidden');
+        tempLogoData = null;
+    } catch (error) {
+        console.error("Error al guardar el logo:", error);
+        alert('Error al guardar el logo.');
+    }
+}
+
+async function generatePDF() {
+    const { jsPDF } = window.jspdf;
+    const docPDF = new jsPDF();
+    const employeeId = document.getElementById('employee-select').value;
+    const monthYear = document.getElementById('month-select').value;
+    if (!employeeId || !monthYear) { return; }
+    const employeeName = document.getElementById('employee-select').options[document.getElementById('employee-select').selectedIndex].text;
+    const [year, month] = monthYear.split('-');
+    const monthName = new Date(year, month - 1).toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+    
+    const companyDocRef = doc(db, `artifacts/${appId}/public/data/company_details`, 'main');
+    const companySnap = await getDoc(companyDocRef);
+    const companyDetails = companySnap.exists() ? companySnap.data() : {};
+
+    if(companyDetails.logo) {
+        try {
+            docPDF.addImage(companyDetails.logo, 'PNG', 14, 10, 40, 20);
+        } catch(e) {
+            console.error("Error al añadir el logo al PDF. Puede que el formato no sea compatible.", e);
+        }
+    }
+    docPDF.setFontSize(12);
+    docPDF.text(companyDetails.name || 'Nombre de la Empresa', 195, 15, { align: 'right' });
+    docPDF.setFontSize(8);
+    docPDF.text(companyDetails.cif || 'CIF/NIF', 195, 20, { align: 'right' });
+    docPDF.text(companyDetails.address || 'Dirección de la Empresa', 195, 25, { align: 'right' });
+
+    docPDF.setFontSize(18); docPDF.text("Registro de Jornada Laboral", 14, 40);
+    docPDF.setFontSize(11); docPDF.text(`Empleado: ${employeeName}`, 14, 50); docPDF.text(`Periodo: ${monthName}`, 14, 56);
+    
+    const shiftsRef = collection(db, `artifacts/${appId}/public/data/shifts`);
+    const q = query(shiftsRef, where("userId", "==", employeeId), where("status", "==", "completed"));
+    const snapshot = await getDocs(q);
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+    const shifts = snapshot.docs.map(d => d.data()).filter(s => { const sd = s.startTime.toDate(); return sd >= startDate && sd <= endDate; });
+    
+    const tableData = shifts.sort((a,b) => a.startTime.toDate() - b.startTime.toDate()).map(shift => {
+        const start = shift.startTime.toDate();
+        const end = shift.endTime.toDate();
+        return [start.toLocaleDateString('es-ES'), start.toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'}), end.toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'}), ((end - start) / 3600000).toFixed(2)];
+    });
+    const totalHours = shifts.reduce((acc, shift) => acc + (shift.endTime.toDate() - shift.startTime.toDate()), 0) / 3600000;
+
+    docPDF.autoTable({ head: [['Fecha', 'Entrada', 'Salida', 'Total Horas']], body: tableData, startY: 65, theme: 'grid', headStyles: { fillColor: [74, 85, 104] } });
+    const finalY = docPDF.lastAutoTable.finalY || 80;
+    docPDF.setFontSize(12); docPDF.setFont('helvetica', 'bold'); docPDF.text(`Total Horas Mensuales (Aprobadas): ${totalHours.toFixed(2)}`, 14, finalY + 10);
+    
+    const signatureDocRef = doc(db, `artifacts/${appId}/public/data/signatures`, `${employeeId}_${monthYear}`);
+    const docSnap = await getDoc(signatureDocRef);
+    if (docSnap.exists()) {
+        const signatureData = docSnap.data();
+        docPDF.setFontSize(11); docPDF.setFont('helvetica', 'normal');
+        docPDF.text("Firma de conformidad del empleado:", 14, finalY + 25);
+        docPDF.addImage(signatureData.signatureData, 'PNG', 14, finalY + 30, 60, 30);
+        const signedDate = signatureData.signedAt.toDate().toLocaleString('es-ES');
+        docPDF.text(`Firmado el: ${signedDate}`, 14, finalY + 65);
+    } else { docPDF.text("Parte de horas pendiente de firma.", 14, finalY + 25); }
+    docPDF.save(`Registro_Horario_${employeeName.replace(' ', '_')}_${monthYear}.pdf`);
+}
+
+function showView(viewName) { Object.values(views).forEach(view => view.style.display = 'none'); views[viewName].style.display = 'block'; }
+
+function initializeEventListeners() {
+    document.getElementById('pin-pad').addEventListener('click', (e) => {
+        if (e.target.closest('button')?.dataset.pin) {
+            enterPin(e.target.closest('button').dataset.pin);
+        }
+    });
+    document.getElementById('clear-pin-btn').addEventListener('click', clearPin);
+    document.getElementById('login-btn').addEventListener('click', login);
+    document.getElementById('logout-btn-employee').addEventListener('click', logout);
+    document.getElementById('logout-btn-manager').addEventListener('click', logout);
+    document.getElementById('clock-in-btn').addEventListener('click', clockIn);
+    document.getElementById('clock-out-btn').addEventListener('click', clockOut);
+    document.getElementById('add-shift-btn').addEventListener('click', () => showShiftForm());
+    document.getElementById('shift-form').addEventListener('submit', (e) => { e.preventDefault(); saveShift(); });
+    document.getElementById('cancel-shift-btn').addEventListener('click', hideShiftForm);
+    document.getElementById('approve-hours-btn').addEventListener('click', openSignatureModal);
+    document.getElementById('clear-signature-btn').addEventListener('click', clearSignature);
+    document.getElementById('cancel-signature-btn').addEventListener('click', hideSignaturePad);
+    document.getElementById('save-signature-btn').addEventListener('click', saveSignature);
+    document.getElementById('tab-reports').addEventListener('click', () => switchTab('reports'));
+    document.getElementById('tab-employees').addEventListener('click', () => switchTab('employees'));
+    document.getElementById('tab-settings').addEventListener('click', () => switchTab('settings'));
+    document.getElementById('generate-pdf-btn').addEventListener('click', generatePDF);
+    document.getElementById('add-employee-btn').addEventListener('click', () => showEmployeeForm());
+    document.getElementById('employee-form').addEventListener('submit', (e) => { e.preventDefault(); saveEmployee(); });
+    document.getElementById('cancel-employee-form-btn').addEventListener('click', hideEmployeeForm);
+    document.getElementById('company-details-form').addEventListener('submit', (e) => { e.preventDefault(); saveCompanyDetails(); });
+    document.getElementById('logo-upload').addEventListener('change', handleLogoUpload);
+    document.getElementById('save-logo-btn').addEventListener('click', saveLogo);
+}
+
+// Expose functions to global scope
+Object.assign(window, {
+    enterPin, clearPin, login, logout, clockIn, clockOut,
+    showShiftForm, hideShiftForm, saveShift,
+    openSignatureModal, clearSignature, hideSignaturePad, saveSignature,
+    switchTab, generatePDF, showEmployeeForm, hideEmployeeForm,
+    saveEmployee, showDeleteConfirm, cancelDeleteConfirm, executeDelete,
+    saveCompanyDetails, saveLogo, handleLogoUpload,
+    approveShift, rejectShift
+});
+
+    </script>
+</body>
+</html>
