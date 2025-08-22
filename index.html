@@ -5,43 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CampiClock - Sistema de Fichaje</title>
     
-    <!-- Desactiva la detección de formularios de Netlify para evitar atascos en post-procesamiento -->
+    <!-- Desactiva la detección de formularios de Netlify -->
     <meta name="netlify" content="noforms">
-
-    <!-- Librerías Externas -->
+    
+    <!-- Librerías externas -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/signature_pad/4.0.0/signature_pad.umd.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- PWA Manifest con imágenes optimizadas en Cloudinary (reemplaza 'your-cloud-name' con tu cuenta real) -->
-    <link rel="manifest" href="data:application/manifest+json,{
-        &quot;name&quot;: &quot;CampiClock&quot;,
-        &quot;short_name&quot;: &quot;CampiClock&quot;,
-        &quot;start_url&quot;: &quot;.&quot;,
-        &quot;display&quot;: &quot;standalone&quot;,
-        &quot;background_color&quot;: &quot;#ffffff&quot;,
-        &quot;theme_color&quot;: &quot;#4f46e5&quot;,
-        &quot;description&quot;: &quot;App de Fichaje Horario para Restaurantes&quot;,
-        &quot;icons&quot;: [{
-            &quot;src&quot;: &quot;https://res.cloudinary.com/your-cloud-name/image/upload/w_192,q_auto,f_auto/campiclock-logo.png&quot;,
-            &quot;sizes&quot;: &quot;192x192&quot;,
-            &quot;type&quot;: &quot;image/png&quot;
-        }, {
-            &quot;src&quot;: &quot;https://res.cloudinary.com/your-cloud-name/image/upload/w_512,q_auto,f_auto/campiclock-logo.png&quot;,
-            &quot;sizes&quot;: &quot;512x512&quot;,
-            &quot;type&quot;: &quot;image/png&quot;
-        }]
-    }">
+    <!-- PWA Manifest con imágenes locales -->
+    <link rel="manifest" href="/manifest.json">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
+        body { font-family: 'Inter', sans-serif; }
         #employee-view, #manager-view, #login-view { display: none; }
         .signature-canvas { border: 2px dashed #cbd5e1; border-radius: 0.5rem; cursor: crosshair; }
         .pending-approval { background-color: #fef9c3; }
+        .error-message { color: #dc2626; font-size: 0.875rem; }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 flex items-center justify-center min-h-screen">
@@ -54,8 +36,7 @@
         <div id="login-view">
             <div class="bg-white p-8 rounded-xl shadow-lg max-w-sm mx-auto">
                 <div class="text-center mb-6">
-                    <!-- Usa Cloudinary para el logo (reemplaza 'your-cloud-name') -->
-                    <img id="login-logo" src="https://res.cloudinary.com/your-cloud-name/image/upload/w_200,q_auto,f_auto/campiclock-logo.png" alt="Logo del Restaurante" class="h-16 mx-auto mb-4 object-contain">
+                    <img id="login-logo" src="/assets/logo.png" alt="Logo del Restaurante" class="h-16 mx-auto mb-4 object-contain">
                     <h1 class="text-2xl font-bold">CampiClock</h1>
                     <p class="text-slate-500">Introduce tu PIN de empleado</p>
                 </div>
@@ -74,10 +55,11 @@
                     <button data-pin="0" class="pin-btn bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded">0</button>
                     <button id="login-btn" class="pin-btn bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded"><i class="fas fa-check"></i></button>
                 </div>
-                <p id="login-error" class="text-red-500 text-center mt-4 h-4"></p>
+                <p id="login-error" class="error-message text-center mt-4 h-4"></p>
             </div>
         </div>
 
+        <!-- Vista de Empleado (similar al código anterior, pero optimizada) -->
         <div id="employee-view" class="bg-white p-8 rounded-xl shadow-lg">
             <div class="flex justify-between items-center mb-6">
                 <div>
@@ -113,7 +95,7 @@
                             <input type="time" id="end-time" required class="form-input w-full mt-1 rounded-md border-gray-300 shadow-sm">
                         </div>
                     </div>
-                    <p id="shift-modal-error" class="text-red-500 text-sm mt-2 h-4"></p>
+                    <p id="shift-modal-error" class="error-message text-sm mt-2 h-4"></p>
                     <div class="mt-6 flex justify-end gap-3">
                         <button type="button" id="cancel-shift-btn" class="btn-secondary bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Cancelar</button>
                         <button type="submit" class="btn-primary bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded">Solicitar Cambio</button>
@@ -146,7 +128,7 @@
                 <h3 class="text-lg font-bold mb-4">Firmar Resumen de Horas</h3>
                 <p class="text-slate-600 mb-4">Al firmar, confirmas que los datos son correctos.</p>
                 <canvas id="signature-canvas" class="signature-canvas w-full h-48 bg-white"></canvas>
-                <p id="signature-error" class="text-red-500 text-sm mt-2 h-4 text-right"></p>
+                <p id="signature-error" class="error-message text-sm mt-2 h-4 text-right"></p>
                 <div class="mt-6 flex justify-end gap-3">
                     <button type="button" id="clear-signature-btn" class="btn-secondary bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Limpiar</button>
                     <button type="button" id="cancel-signature-btn" class="btn-secondary bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Cancelar</button>
@@ -155,6 +137,7 @@
             </div>
         </div>
 
+        <!-- Vista de Manager (optimizada, igual que antes) -->
         <div id="manager-view" class="bg-white p-8 rounded-xl shadow-lg">
             <div class="flex justify-between items-center mb-6">
                 <div>
@@ -226,7 +209,7 @@
                                 <option value="manager">Administrador</option>
                             </select>
                         </div>
-                        <p id="modal-error" class="text-red-500 text-sm mt-2 h-4"></p>
+                        <p id="modal-error" class="error-message text-sm mt-2 h-4"></p>
                         <div class="mt-6 flex justify-end gap-3">
                             <button type="button" id="cancel-employee-form-btn" class="btn-secondary bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Cancelar</button>
                             <button type="submit" id="save-employee-btn" class="btn-primary bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded">Guardar</button>
@@ -264,7 +247,7 @@
                     <div class="bg-slate-50 p-4 rounded-lg">
                         <h4 class="font-semibold mb-2">Logo</h4>
                         <div class="flex items-center gap-4">
-                            <img id="logo-preview" src="https://res.cloudinary.com/your-cloud-name/image/upload/w_100,q_auto,f_auto/campiclock-logo.png" class="h-20 w-20 object-contain border p-1 rounded-md bg-white">
+                            <img id="logo-preview" src="/assets/logo.png" class="h-20 w-20 object-contain border p-1 rounded-md bg-white">
                             <div>
                                 <label for="logo-upload" class="btn-secondary bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded cursor-pointer">Cambiar Logo</label>
                                 <input type="file" id="logo-upload" class="hidden" accept="image/*">
@@ -280,7 +263,7 @@
     </div>
     
     <script type="module">
-        // Carga diferida de jsPDF y AutoTable para mejorar el rendimiento
+        // Carga diferida de jsPDF y AutoTable
         async function loadJsPDF() {
             if (!window.jspdf) {
                 const jspdfScript = document.createElement('script');
@@ -299,25 +282,32 @@
         }
 
         // Importaciones de Firebase
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, query, where, addDoc, doc, updateDoc, onSnapshot, setDoc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, where, addDoc, doc, updateDoc, onSnapshot, setDoc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
         document.addEventListener('DOMContentLoaded', async () => {
-            // Verifica la configuración de Firebase
-            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-restaurant-app';
+            // Configuración de Firebase desde variable de entorno
+            const firebaseConfig = window.__firebase_config ? JSON.parse(window.__firebase_config) : null;
+            const appId = window.__app_id || 'default-restaurant-app';
 
-            if (!firebaseConfig.apiKey) {
-                document.getElementById('login-error').textContent = 'Error: Configuración de Firebase no encontrada.';
-                console.error('Firebase config missing:', firebaseConfig);
+            if (!firebaseConfig || !firebaseConfig.apiKey) {
+                document.getElementById('login-error').textContent = 'Error: Configuración de Firebase no encontrada. Por favor, configura __firebase_config en Netlify.';
+                console.error('Firebase config missing. Add __firebase_config to Netlify environment variables.');
                 return;
             }
 
             // Inicializa Firebase
-            const app = initializeApp(firebaseConfig);
-            const db = getFirestore(app);
-            const auth = getAuth(app);
+            let app, db, auth;
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+            } catch (error) {
+                document.getElementById('login-error').textContent = `Error al inicializar Firebase: ${error.message}`;
+                console.error('Firebase initialization error:', error);
+                return;
+            }
 
             const views = {
                 loading: document.getElementById('loading-view'),
@@ -326,27 +316,22 @@
                 manager: document.getElementById('manager-view')
             };
 
-            let currentUser = null, currentPin = '', activeShiftId = null, signaturePad, editingShiftId = null, tempLogoData = null;
+            let currentUser = null, currentPin = '', activeShiftId = null, signaturePad = null, editingShiftId = null, tempLogoData = null;
 
-            onAuthStateChanged(auth, (user) => {
+            // Autenticación anónima
+            onAuthStateChanged(auth, async (user) => {
                 if (user) {
                     showView('login');
-                    setupInitialData();
-                    loadCompanyLogoForLogin();
+                    await setupInitialData();
+                    await loadCompanyLogoForLogin();
                     initializeEventListeners();
                 } else {
-                    (async () => {
-                        try {
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await signInWithCustomToken(auth, __initial_auth_token);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
-                        } catch (error) {
-                            console.error("Error de autenticación:", error);
-                            document.getElementById('login-error').textContent = `Error de autenticación: ${error.message}`;
-                        }
-                    })();
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (error) {
+                        document.getElementById('login-error').textContent = `Error de autenticación: ${error.message}`;
+                        console.error('Authentication error:', error);
+                    }
                 }
             });
 
@@ -354,19 +339,20 @@
                 try {
                     const setupDocRef = doc(db, `artifacts/${appId}/public/data/app_config`, 'initial_setup');
                     const docSnap = await getDoc(setupDocRef);
-
                     if (!docSnap.exists()) {
                         const usersRef = collection(db, `artifacts/${appId}/public/data/users`);
-                        const usersData = [{ name: "Admin", pin: "0000", role: "manager" }];
-                        for (const userData of usersData) {
-                            await addDoc(usersRef, userData);
-                        }
+                        await addDoc(usersRef, { name: "Admin", pin: "0000", role: "manager" });
                         await setDoc(setupDocRef, { setupComplete: true });
                     }
                 } catch (error) {
-                    console.error("Error al configurar datos iniciales:", error);
-                    document.getElementById('login-error').textContent = `Error al cargar datos: ${error.message}`;
+                    console.error('Error setting up initial data:', error);
+                    document.getElementById('login-error').textContent = `Error al inicializar datos: ${error.message}`;
                 }
+            }
+
+            function showView(viewName) {
+                Object.values(views).forEach(view => view.style.display = 'none');
+                views[viewName].style.display = 'block';
             }
 
             function enterPin(num) {
@@ -398,12 +384,12 @@
                     const querySnapshot = await getDocs(q);
                     if (querySnapshot.empty) {
                         loginError.textContent = 'PIN incorrecto.';
-                        currentPin = '';
-                        updatePinDisplay();
+                        clearPin();
                         return;
                     }
                     const userDoc = querySnapshot.docs[0];
                     currentUser = { id: userDoc.id, ...userDoc.data() };
+                    clearPin();
                     if (currentUser.role === 'manager') {
                         showView('manager');
                         await loadManagerView();
@@ -412,7 +398,7 @@
                         await loadEmployeeView();
                     }
                 } catch (error) {
-                    console.error("Error al iniciar sesión:", error);
+                    console.error('Login error:', error);
                     loginError.textContent = `Error: ${error.message}`;
                 }
             }
@@ -427,7 +413,7 @@
 
             async function loadEmployeeView() {
                 try {
-                    document.getElementById('employee-name').textContent = currentUser.name;
+                    document.getElementById('employee-name').textContent = currentUser.name || 'Usuario';
                     const now = new Date();
                     const monthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
                     const monthName = now.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
@@ -435,7 +421,7 @@
                     listenForShifts(currentUser.id, monthYear, 'employee');
                     updateSignatureButtonState(currentUser.id, monthYear);
                 } catch (error) {
-                    console.error("Error al cargar vista de empleado:", error);
+                    console.error('Error loading employee view:', error);
                     document.getElementById('clock-status').textContent = `Error: ${error.message}`;
                 }
             }
@@ -460,11 +446,11 @@
                             updateManagerShiftsUI(monthShifts);
                         }
                     }, (error) => {
-                        console.error("Error al escuchar turnos:", error);
+                        console.error('Error listening to shifts:', error);
                         document.getElementById(viewType === 'employee' ? 'clock-status' : 'manager-total-hours').textContent = `Error: ${error.message}`;
                     });
                 } catch (error) {
-                    console.error("Error al configurar escucha de turnos:", error);
+                    console.error('Error setting up shift listener:', error);
                 }
             }
 
@@ -535,7 +521,7 @@
                     activeShiftId = docRef.id;
                     clockStatus.textContent = 'Turno iniciado.';
                 } catch (error) {
-                    console.error("Error al iniciar turno:", error);
+                    console.error('Error clocking in:', error);
                     clockStatus.textContent = `Error: ${error.message}`;
                 }
             }
@@ -549,7 +535,7 @@
                     activeShiftId = null;
                     clockStatus.textContent = 'Turno finalizado.';
                 } catch (error) {
-                    console.error("Error al finalizar turno:", error);
+                    console.error('Error clocking out:', error);
                     clockStatus.textContent = `Error: ${error.message}`;
                 }
             }
@@ -575,7 +561,7 @@
                         approveBtn.classList.remove('hidden');
                     }
                 } catch (error) {
-                    console.error("Error al verificar firma:", error);
+                    console.error('Error checking signature:', error);
                 }
             }
 
@@ -586,7 +572,7 @@
                     const canvas = document.getElementById('signature-canvas');
                     signaturePad = new window.SignaturePad(canvas, { backgroundColor: 'rgb(255, 255, 255)' });
                 } catch (error) {
-                    console.error("Error al abrir modal de firma:", error);
+                    console.error('Error opening signature modal:', error);
                     document.getElementById('signature-error').textContent = `Error: ${error.message}`;
                 }
             }
@@ -605,7 +591,7 @@
                 const signatureError = document.getElementById('signature-error');
                 signatureError.textContent = '';
                 if (!signaturePad || signaturePad.isEmpty()) {
-                    signatureError.textContent = "Por favor, proporciona una firma.";
+                    signatureError.textContent = 'Por favor, proporciona una firma.';
                     return;
                 }
                 const signatureDataURL = signaturePad.toDataURL();
@@ -622,7 +608,7 @@
                     hideSignaturePad();
                     updateSignatureButtonState(currentUser.id, monthYear);
                 } catch (error) {
-                    console.error("Error al guardar la firma:", error);
+                    console.error('Error saving signature:', error);
                     signatureError.textContent = `Error: ${error.message}`;
                 }
             }
@@ -636,7 +622,7 @@
                     await loadCompanySettings();
                     updateManagerShiftView();
                 } catch (error) {
-                    console.error("Error al cargar vista de administrador:", error);
+                    console.error('Error loading manager view:', error);
                     document.getElementById('manager-total-hours').textContent = `Error: ${error.message}`;
                 }
             }
@@ -708,7 +694,7 @@
                         signatureDisplay.innerHTML = '<p class="text-slate-500">Este parte de horas aún no ha sido firmado.</p>';
                     }
                 } catch (error) {
-                    console.error("Error al cargar firma:", error);
+                    console.error('Error loading signature:', error);
                 }
             }
 
@@ -716,7 +702,7 @@
                 try {
                     await updateDoc(doc(db, `artifacts/${appId}/public/data/shifts`, shiftId), { status: 'completed' });
                 } catch (error) {
-                    console.error("Error al aprobar turno:", error);
+                    console.error('Error approving shift:', error);
                 }
             }
 
@@ -724,7 +710,7 @@
                 try {
                     await deleteDoc(doc(db, `artifacts/${appId}/public/data/shifts`, shiftId));
                 } catch (error) {
-                    console.error("Error al rechazar turno:", error);
+                    console.error('Error rejecting shift:', error);
                 }
             }
 
@@ -734,17 +720,15 @@
                     const usersRef = collection(db, `artifacts/${appId}/public/data/users`);
                     const q = query(usersRef, where("role", "==", "employee"));
                     const querySnapshot = await getDocs(q);
-                    const currentSelection = employeeSelect.value;
-                    employeeSelect.innerHTML = '';
+                    employeeSelect.innerHTML = '<option value="">Selecciona un empleado</option>';
                     querySnapshot.forEach(doc => {
                         const option = document.createElement('option');
                         option.value = doc.id;
                         option.textContent = doc.data().name;
                         employeeSelect.appendChild(option);
                     });
-                    if (currentSelection) employeeSelect.value = currentSelection;
                 } catch (error) {
-                    console.error("Error al cargar empleados:", error);
+                    console.error('Error populating employee dropdown:', error);
                 }
             }
 
@@ -778,7 +762,7 @@
                             </div>`;
                     });
                 } catch (error) {
-                    console.error("Error al renderizar lista de empleados:", error);
+                    console.error('Error rendering employee list:', error);
                 }
             }
 
@@ -795,7 +779,6 @@
                 if (userId) {
                     formTitle.textContent = 'Editar Empleado';
                     saveBtn.textContent = 'Actualizar';
-                    roleSelector.parentElement.classList.remove('hidden');
                     getDoc(doc(db, `artifacts/${appId}/public/data/users`, userId)).then(userSnap => {
                         if (userSnap.exists()) {
                             const userData = userSnap.data();
@@ -803,11 +786,10 @@
                             document.getElementById('employee-pin-input').value = userData.pin;
                             roleSelector.value = userData.role || 'employee';
                         }
-                    }).catch(error => console.error("Error al cargar datos de empleado:", error));
+                    }).catch(error => console.error('Error loading employee data:', error));
                 } else {
                     formTitle.textContent = 'Añadir Nuevo Empleado';
                     saveBtn.textContent = 'Guardar';
-                    roleSelector.parentElement.classList.remove('hidden');
                     roleSelector.value = 'employee';
                 }
             }
@@ -819,13 +801,11 @@
 
             function showDeleteConfirm(userId) {
                 document.getElementById(`delete-confirm-${userId}`).classList.remove('hidden');
-                document.getElementById(`delete-confirm-${userId}`).classList.add('flex');
                 document.getElementById(`delete-btn-${userId}`).classList.add('hidden');
             }
 
             function cancelDeleteConfirm(userId) {
                 document.getElementById(`delete-confirm-${userId}`).classList.add('hidden');
-                document.getElementById(`delete-confirm-${userId}`).classList.remove('flex');
                 document.getElementById(`delete-btn-${userId}`).classList.remove('hidden');
             }
 
@@ -844,9 +824,7 @@
                 const snapshot = await getDocs(q);
                 let pinExists = false;
                 snapshot.forEach(doc => {
-                    if (doc.id !== editingUserId) {
-                        pinExists = true;
-                    }
+                    if (doc.id !== editingUserId) pinExists = true;
                 });
                 if (pinExists) {
                     modalError.textContent = 'Este PIN ya está en uso.';
@@ -864,20 +842,19 @@
                     await populateEmployeeDropdown();
                     updateManagerShiftView();
                 } catch (error) {
-                    console.error("Error al guardar empleado:", error);
+                    console.error('Error saving employee:', error);
                     modalError.textContent = `Error: ${error.message}`;
                 }
             }
 
             async function executeDelete(userId) {
-                if (!userId) return;
                 try {
                     await deleteDoc(doc(db, `artifacts/${appId}/public/data/users`, userId));
                     await renderEmployeeList();
                     await populateEmployeeDropdown();
                     updateManagerShiftView();
                 } catch (error) {
-                    console.error("Error al borrar empleado:", error);
+                    console.error('Error deleting employee:', error);
                 }
             }
 
@@ -900,7 +877,7 @@
                             document.getElementById('start-time').value = start.toTimeString().substring(0, 5);
                             document.getElementById('end-time').value = end.toTimeString().substring(0, 5);
                         }
-                    }).catch(error => console.error("Error al cargar datos de turno:", error));
+                    }).catch(error => console.error('Error loading shift data:', error));
                 } else {
                     modalTitle.textContent = 'Añadir Fichaje Olvidado';
                 }
@@ -936,7 +913,7 @@
                     }
                     hideShiftForm();
                 } catch (error) {
-                    console.error("Error al guardar fichaje:", error);
+                    console.error('Error saving shift:', error);
                     modalError.textContent = `Error: ${error.message}`;
                 }
             }
@@ -952,9 +929,9 @@
                     await setDoc(companyDocRef, companyDetails, { merge: true });
                     const successMsg = document.getElementById('company-details-success');
                     successMsg.classList.remove('hidden');
-                    setTimeout(() => { successMsg.classList.add('hidden'); }, 3000);
+                    setTimeout(() => successMsg.classList.add('hidden'), 3000);
                 } catch (error) {
-                    console.error("Error al guardar datos de la empresa:", error);
+                    console.error('Error saving company details:', error);
                     alert(`Error al guardar datos: ${error.message}`);
                 }
             }
@@ -973,7 +950,7 @@
                         }
                     }
                 } catch (error) {
-                    console.error("Error al cargar configuración de la empresa:", error);
+                    console.error('Error loading company settings:', error);
                 }
             }
 
@@ -985,7 +962,7 @@
                         document.getElementById('login-logo').src = docSnap.data().logo;
                     }
                 } catch (error) {
-                    console.error("Error al cargar logo:", error);
+                    console.error('Error loading logo:', error);
                 }
             }
 
@@ -1032,8 +1009,8 @@
                     tempLogoData = resizedLogo;
                     document.getElementById('save-logo-btn').classList.remove('hidden');
                 } catch (error) {
-                    console.error("Error al redimensionar la imagen:", error);
-                    alert("Hubo un problema al procesar la imagen.");
+                    console.error('Error resizing image:', error);
+                    alert('Hubo un problema al procesar la imagen.');
                 }
             }
 
@@ -1047,12 +1024,12 @@
                     await setDoc(companyDocRef, { logo: tempLogoData }, { merge: true });
                     const successMsg = document.getElementById('logo-save-success');
                     successMsg.classList.remove('hidden');
-                    setTimeout(() => { successMsg.classList.add('hidden'); }, 3000);
+                    setTimeout(() => successMsg.classList.add('hidden'), 3000);
                     loadCompanyLogoForLogin();
                     document.getElementById('save-logo-btn').classList.add('hidden');
                     tempLogoData = null;
                 } catch (error) {
-                    console.error("Error al guardar el logo:", error);
+                    console.error('Error saving logo:', error);
                     alert(`Error al guardar el logo: ${error.message}`);
                 }
             }
@@ -1079,7 +1056,7 @@
                         try {
                             docPDF.addImage(companyDetails.logo, 'PNG', 14, 10, 40, 20);
                         } catch (e) {
-                            console.error("Error al añadir el logo al PDF:", e);
+                            console.error('Error adding logo to PDF:', e);
                         }
                     }
                     docPDF.setFontSize(12);
@@ -1138,14 +1115,9 @@
                     }
                     docPDF.save(`Registro_Horario_${employeeName.replace(' ', '_')}_${monthYear}.pdf`);
                 } catch (error) {
-                    console.error("Error al generar PDF:", error);
+                    console.error('Error generating PDF:', error);
                     alert(`Error al generar PDF: ${error.message}`);
                 }
-            }
-
-            function showView(viewName) {
-                Object.values(views).forEach(view => view.style.display = 'none');
-                views[viewName].style.display = 'block';
             }
 
             function initializeEventListeners() {
@@ -1188,7 +1160,7 @@
                 document.getElementById('save-logo-btn').addEventListener('click', saveLogo);
             }
 
-            // Exponer funciones globales de forma segura
+            // Exponer funciones globales
             window.CampiClock = {
                 showShiftForm,
                 hideShiftForm,

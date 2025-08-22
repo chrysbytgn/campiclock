@@ -1,0 +1,11 @@
+[build]
+  publish = "/"  # Directorio donde está index.html
+  command = ""   # No se necesita comando de build para HTML estático
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[build.processing]
+  skip_processing = true  # Desactiva post-procesamiento
