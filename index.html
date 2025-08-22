@@ -871,26 +871,24 @@
         }
 
         // --- App Initialization ---
-        window.onload = () => {
-            onAuthStateChanged(auth, (user) => {
-                if (user) {
-                    showView('login');
-                    setupInitialData();
-                    loadCompanyLogoForLogin();
-                } else {
-                    (async () => {
-                        try {
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await signInWithCustomToken(auth, __initial_auth_token);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
-                        } catch (error) { console.error("Error de autenticación:", error); }
-                    })();
-                }
-            });
-            initEventListeners();
-        };
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                showView('login');
+                setupInitialData();
+                loadCompanyLogoForLogin();
+            } else {
+                (async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) { console.error("Error de autenticación:", error); }
+                })();
+            }
+        });
+        initEventListeners();
 
         // --- Initial Styling ---
         document.querySelectorAll('.pin-btn, .action-btn, .tab, .btn-primary, .btn-secondary, .form-input').forEach(el => {
