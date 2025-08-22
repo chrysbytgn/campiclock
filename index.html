@@ -8,6 +8,12 @@
     <!-- Desactiva la detección de formularios de Netlify -->
     <meta name="netlify" content="noforms">
     
+    <!-- Íconos y manifiesto para PWA -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
+    <link rel="manifest" href="/assets/site.webmanifest">
+    
     <!-- Librerías externas -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/signature_pad/4.0.0/signature_pad.umd.min.js"></script>
@@ -16,8 +22,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- PWA Manifest con imágenes locales -->
-    <link rel="manifest" href="/manifest.json">
+    <!-- Estilos -->
     <style>
         body { font-family: 'Inter', sans-serif; }
         #employee-view, #manager-view, #login-view { display: none; }
@@ -59,7 +64,6 @@
             </div>
         </div>
 
-        <!-- Vista de Empleado (similar al código anterior, pero optimizada) -->
         <div id="employee-view" class="bg-white p-8 rounded-xl shadow-lg">
             <div class="flex justify-between items-center mb-6">
                 <div>
@@ -137,7 +141,6 @@
             </div>
         </div>
 
-        <!-- Vista de Manager (optimizada, igual que antes) -->
         <div id="manager-view" class="bg-white p-8 rounded-xl shadow-lg">
             <div class="flex justify-between items-center mb-6">
                 <div>
@@ -1178,7 +1181,6 @@
     </script>
 </body>
 </html>
-
 
 
 
